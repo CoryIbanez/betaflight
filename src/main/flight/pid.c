@@ -586,8 +586,6 @@ static FAST_RAM_ZERO_INIT float acroTrainerGain;
 
 #ifdef USE_THRUST_LINEARIZATION
 FAST_RAM_ZERO_INIT float thrustLinearization;
-FAST_RAM_ZERO_INIT float thrustLinearizationReciprocal;
-FAST_RAM_ZERO_INIT float thrustLinearizationB;
 #endif
 
 void pidUpdateAntiGravityThrottleFilter(float throttle)
@@ -735,11 +733,8 @@ void pidInitConfig(const pidProfile_t *pidProfile)
 
 #ifdef USE_THRUST_LINEARIZATION
     thrustLinearization = pidProfile->thrustLinearization / 100.0f;
-    if (thrustLinearization != 0.0f) {
-        thrustLinearizationReciprocal = 1.0f / thrustLinearization;
-        thrustLinearizationB = (1.0f - thrustLinearization) / (2.0f * thrustLinearization);
-    }
 #endif
+
 #if defined(USE_D_MIN)
     for (int axis = FD_ROLL; axis <= FD_YAW; ++axis) {
         const uint8_t dMin = pidProfile->d_min[axis];
@@ -787,7 +782,10 @@ void pidAcroTrainerInit(void)
 float pidCompensateThrustLinearization(float throttle)
 {
     if (thrustLinearization != 0.0f) {
-        throttle = throttle * (throttle * thrustLinearization + 1.0f - thrustLinearization);
+        // for whoops where a lot of TL is needed, allow more throttle boost
+        const float throttleCompensateAmount = (1.0f - 0.5f * thrustLinearization);
+        const float throttleReversed = (1.0f - throttle);
+        throttle /= 1.0f + throttleCompensateAmount * throttleReversed  * throttleReversed * thrustLinearization;
     }
     return throttle;
 }
@@ -796,8 +794,8 @@ float pidApplyThrustLinearization(float motorOutput)
 {
     if (thrustLinearization != 0.0f) {
         if (motorOutput > 0.0f) {
-            motorOutput = sqrtf(motorOutput * thrustLinearizationReciprocal +
-                                thrustLinearizationB * thrustLinearizationB) - thrustLinearizationB;
+            const float motorOutputReversed = (1.0f - motorOutput);
+            motorOutput *= 1.0f + motorOutputReversed  * motorOutputReversed * thrustLinearization;
         }
     }
     return motorOutput;
