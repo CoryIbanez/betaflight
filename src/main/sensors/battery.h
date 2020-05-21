@@ -27,9 +27,6 @@
 #include "sensors/current.h"
 #include "sensors/voltage.h"
 
-//TODO: Make the 'cell full' voltage user adjustble
-#define CELL_VOLTAGE_FULL_CV 420
-
 #define VBAT_CELL_VOTAGE_RANGE_MIN 100
 #define VBAT_CELL_VOTAGE_RANGE_MAX 500
 
@@ -69,6 +66,7 @@ typedef struct batteryConfig_s {
     uint8_t vbatDurationForWarning;         // Period voltage has to sustain before the battery state is set to BATTERY_WARNING (in 0.1 s)
     uint8_t vbatDurationForCritical;        // Period voltage has to sustain before the battery state is set to BATTERY_CRIT (in 0.1 s)
     uint8_t vbatSagLpfPeriod;               // Period of the cutoff frequency for the Vbat sag and PID compensation filter (in 0.1 s)
+    uint8_t vbatSagMaxVoltage;              // Max voltage for the Vbat sag and PID compensation filter (in 0.1V)
 } batteryConfig_t;
 
 PG_DECLARE(batteryConfig_t, batteryConfig);
