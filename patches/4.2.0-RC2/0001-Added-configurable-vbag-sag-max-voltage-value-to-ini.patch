@@ -1,0 +1,85 @@
+From 61e2d3e5377c4e50cf899541a8d80405664a47de Mon Sep 17 00:00:00 2001
+From: Mewo <coryibanez93@gmail.com>
+Date: Thu, 21 May 2020 00:31:56 -0700
+Subject: [PATCH] Added configurable vbag sag max voltage value to initiate
+ when sag compensation starts
+
+---
+ src/main/cli/settings.c    | 3 ++-
+ src/main/flight/mixer.c    | 3 +--
+ src/main/sensors/battery.c | 1 +
+ src/main/sensors/battery.h | 4 +---
+ 4 files changed, 5 insertions(+), 6 deletions(-)
+
+diff --git a/src/main/cli/settings.c b/src/main/cli/settings.c
+index bde1b2dfb..fef8b8c70 100644
+--- a/src/main/cli/settings.c
++++ b/src/main/cli/settings.c
+@@ -842,6 +842,7 @@ const clivalue_t valueTable[] = {
+     { "vbat_display_lpf_period",    VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 1, UINT8_MAX }, PG_BATTERY_CONFIG, offsetof(batteryConfig_t, vbatDisplayLpfPeriod) },
+ #if defined(USE_BATTERY_VOLTAGE_SAG_COMPENSATION)
+     { "vbat_sag_lpf_period",        VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 1, UINT8_MAX }, PG_BATTERY_CONFIG, offsetof(batteryConfig_t, vbatSagLpfPeriod) },
++    { "vbat_sag_max_voltage",       VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 1, UINT8_MAX }, PG_BATTERY_CONFIG, offsetof(batteryConfig_t, vbatSagMaxVoltage) },
+ #endif
+     { "ibat_lpf_period",            VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 0, UINT8_MAX }, PG_BATTERY_CONFIG, offsetof(batteryConfig_t, ibatLpfPeriod) },
+     { "vbat_duration_for_warning",  VAR_UINT8  | MASTER_VALUE, .config.minmax = { 0, 150 }, PG_BATTERY_CONFIG, offsetof(batteryConfig_t, vbatDurationForWarning) },
+@@ -941,7 +942,7 @@ const clivalue_t valueTable[] = {
+ #ifdef USE_GPS
+     { "gps_provider",               VAR_UINT8  | MASTER_VALUE | MODE_LOOKUP, .config.lookup = { TABLE_GPS_PROVIDER }, PG_GPS_CONFIG, offsetof(gpsConfig_t, provider) },
+     { "gps_sbas_mode",              VAR_UINT8  | MASTER_VALUE | MODE_LOOKUP, .config.lookup = { TABLE_GPS_SBAS_MODE }, PG_GPS_CONFIG, offsetof(gpsConfig_t, sbasMode) },
+-    { "gps_sbas_integrity",         VAR_UINT8  | MASTER_VALUE | MODE_LOOKUP, .config.lookup = { TABLE_OFF_ON }, PG_GPS_CONFIG, offsetof(gpsConfig_t, sbas_integrity) }, 
++    { "gps_sbas_integrity",         VAR_UINT8  | MASTER_VALUE | MODE_LOOKUP, .config.lookup = { TABLE_OFF_ON }, PG_GPS_CONFIG, offsetof(gpsConfig_t, sbas_integrity) },
+     { "gps_auto_config",            VAR_UINT8  | MASTER_VALUE | MODE_LOOKUP, .config.lookup = { TABLE_OFF_ON }, PG_GPS_CONFIG, offsetof(gpsConfig_t, autoConfig) },
+     { "gps_auto_baud",              VAR_UINT8  | MASTER_VALUE | MODE_LOOKUP, .config.lookup = { TABLE_OFF_ON }, PG_GPS_CONFIG, offsetof(gpsConfig_t, autoBaud) },
+     { "gps_ublox_use_galileo",      VAR_UINT8  | MASTER_VALUE | MODE_LOOKUP, .config.lookup = { TABLE_OFF_ON }, PG_GPS_CONFIG, offsetof(gpsConfig_t, gps_ublox_use_galileo) },
+diff --git a/src/main/flight/mixer.c b/src/main/flight/mixer.c
+index 77d467afd..cf3b3ef14 100644
+--- a/src/main/flight/mixer.c
++++ b/src/main/flight/mixer.c
+@@ -363,8 +363,7 @@ void mixerInitProfile(void)
+ #if defined(USE_BATTERY_VOLTAGE_SAG_COMPENSATION)
+     vbatSagCompensationFactor = 0.0f;
+     if (currentPidProfile->vbat_sag_compensation > 0) {
+-        //TODO: Make this voltage user configurable
+-        vbatFull = CELL_VOLTAGE_FULL_CV;
++        vbatFull = batteryConfig()->vbatSagMaxVoltage;
+         vbatRangeToCompensate = vbatFull - batteryConfig()->vbatwarningcellvoltage;
+         if (vbatRangeToCompensate > 0) {
+             vbatSagCompensationFactor = ((float)currentPidProfile->vbat_sag_compensation) / 100.0f;
+diff --git a/src/main/sensors/battery.c b/src/main/sensors/battery.c
+index 0aafeaed7..bf828533e 100644
+--- a/src/main/sensors/battery.c
++++ b/src/main/sensors/battery.c
+@@ -120,6 +120,7 @@ PG_RESET_TEMPLATE(batteryConfig_t, batteryConfig,
+ 
+     .vbatDisplayLpfPeriod = 30,
+     .vbatSagLpfPeriod = 2,
++    .vbatSagMaxVoltage = 42,
+     .ibatLpfPeriod = 10,
+     .vbatDurationForWarning = 0,
+     .vbatDurationForCritical = 0,
+diff --git a/src/main/sensors/battery.h b/src/main/sensors/battery.h
+index 943a85621..5356509f2 100644
+--- a/src/main/sensors/battery.h
++++ b/src/main/sensors/battery.h
+@@ -27,9 +27,6 @@
+ #include "sensors/current.h"
+ #include "sensors/voltage.h"
+ 
+-//TODO: Make the 'cell full' voltage user adjustble
+-#define CELL_VOLTAGE_FULL_CV 420
+-
+ #define VBAT_CELL_VOTAGE_RANGE_MIN 100
+ #define VBAT_CELL_VOTAGE_RANGE_MAX 500
+ 
+@@ -69,6 +66,7 @@ typedef struct batteryConfig_s {
+     uint8_t vbatDurationForWarning;         // Period voltage has to sustain before the battery state is set to BATTERY_WARNING (in 0.1 s)
+     uint8_t vbatDurationForCritical;        // Period voltage has to sustain before the battery state is set to BATTERY_CRIT (in 0.1 s)
+     uint8_t vbatSagLpfPeriod;               // Period of the cutoff frequency for the Vbat sag and PID compensation filter (in 0.1 s)
++    uint8_t vbatSagMaxVoltage;              // Max voltage for the Vbat sag and PID compensation filter (in 0.1V)
+ } batteryConfig_t;
+ 
+ PG_DECLARE(batteryConfig_t, batteryConfig);
+-- 
+2.26.0
+
