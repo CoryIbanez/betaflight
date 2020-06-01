@@ -1,0 +1,64 @@
+From c4d85c6bda160cd191c3985a1097fb4cfcfab61b Mon Sep 17 00:00:00 2001
+From: Robert Lacroix <mail@robertlacroix.com>
+Date: Tue, 25 Feb 2020 17:16:54 -0800
+Subject: [PATCH] Fix failsafe beeper
+
+---
+ src/main/flight/failsafe.c | 7 ++++++-
+ src/main/flight/failsafe.h | 1 +
+ 2 files changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/src/main/flight/failsafe.c b/src/main/flight/failsafe.c
+index dfa3f98c2..8b507b9a1 100644
+--- a/src/main/flight/failsafe.c
++++ b/src/main/flight/failsafe.c
+@@ -97,6 +97,7 @@ void failsafeReset(void)
+     failsafeState.receivingRxDataPeriodPreset = 0;
+     failsafeState.phase = FAILSAFE_IDLE;
+     failsafeState.rxLinkState = FAILSAFE_RXLINK_DOWN;
++    failsafeState.rxRecovering = false;
+ }
+ 
+ void failsafeInit(void)
+@@ -181,6 +182,9 @@ void failsafeOnValidDataReceived(void)
+     if ((failsafeState.validRxDataReceivedAt - failsafeState.validRxDataFailedAt) > failsafeState.rxDataRecoveryPeriod) {
+         failsafeState.rxLinkState = FAILSAFE_RXLINK_UP;
+         unsetArmingDisabled(ARMING_DISABLED_RX_FAILSAFE);
++        failsafeState.rxRecovering = false;
++    } else {
++        failsafeState.rxRecovering = true;
+     }
+ }
+ 
+@@ -191,6 +195,7 @@ void failsafeOnValidDataFailed(void)
+     if ((failsafeState.validRxDataFailedAt - failsafeState.validRxDataReceivedAt) > failsafeState.rxDataFailurePeriod) {
+         failsafeState.rxLinkState = FAILSAFE_RXLINK_DOWN;
+     }
++    failsafeState.rxRecovering = false;
+ }
+ 
+ void failsafeUpdateState(void)
+@@ -209,7 +214,7 @@ void failsafeUpdateState(void)
+     }
+ 
+     // Beep RX lost only if we are not seeing data and we have been armed earlier
+-    if (!receivingRxData && (armed || ARMING_FLAG(WAS_EVER_ARMED))) {
++    if (!receivingRxData && (armed || ARMING_FLAG(WAS_EVER_ARMED)) && !failsafeSwitchIsOn && !failsafeState.rxRecovering) {
+         beeperMode = BEEPER_RX_LOST;
+     }
+ 
+diff --git a/src/main/flight/failsafe.h b/src/main/flight/failsafe.h
+index 547d74b8c..d955d76b3 100644
+--- a/src/main/flight/failsafe.h
++++ b/src/main/flight/failsafe.h
+@@ -81,6 +81,7 @@ typedef struct failsafeState_s {
+     int16_t events;
+     bool monitoring;
+     bool active;
++    bool rxRecovering;
+     uint32_t rxDataFailurePeriod;
+     uint32_t rxDataRecoveryPeriod;
+     uint32_t validRxDataReceivedAt;
+-- 
+2.26.0
+
