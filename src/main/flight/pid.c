@@ -1464,7 +1464,7 @@ void FAST_CODE pidController(const pidProfile_t *pidProfile, timeUs_t currentTim
         if (launchControlActive) {
             Ki = launchControlKi;
             axisDynCi = dynCi;
-        } else 
+        } else
 #endif
         {
             Ki = pidCoefficient[axis].Ki;
@@ -1528,7 +1528,7 @@ void FAST_CODE pidController(const pidProfile_t *pidProfile, timeUs_t currentTim
                 }
             }
 #endif
-            pidData[axis].D = pidCoefficient[axis].Kd * delta * tpaFactor * dMinFactor;
+            pidData[axis].D = pidCoefficient[axis].Kd * delta * tpaFactor * dMinFactor * (1 - ((constrainf((fabsf(errorRate)/300),0,1))*(constrainf((fabsf(errorRate)/300),0,1))*0.9));
         } else {
             pidData[axis].D = 0;
         }
