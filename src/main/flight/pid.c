@@ -1303,31 +1303,31 @@ void FAST_CODE pidController(const pidProfile_t *pidProfile, timeUs_t currentTim
 
     const bool launchControlActive = isLaunchControlActive();
 
-#if defined(USE_ACC)
-    const bool gpsRescueIsActive = FLIGHT_MODE(GPS_RESCUE_MODE);
-    levelMode_e levelMode;
-    if (FLIGHT_MODE(ANGLE_MODE) || FLIGHT_MODE(HORIZON_MODE) || gpsRescueIsActive) {
-        if (levelRaceMode && !gpsRescueIsActive) {
-            levelMode = LEVEL_MODE_R;
-        } else {
-            levelMode = LEVEL_MODE_RP;
-        }
-    } else {
-        levelMode = LEVEL_MODE_OFF;
-    }
-
-    // Keep track of when we entered a self-level mode so that we can
-    // add a guard time before crash recovery can activate.
-    // Also reset the guard time whenever GPS Rescue is activated.
-    if (levelMode) {
-        if ((levelModeStartTimeUs == 0) || (gpsRescueIsActive && !gpsRescuePreviousState)) {
-            levelModeStartTimeUs = currentTimeUs;
-        }
-    } else {
-        levelModeStartTimeUs = 0;
-    }
-    gpsRescuePreviousState = gpsRescueIsActive;
-#endif
+// #if defined(USE_ACC)
+//     const bool gpsRescueIsActive = FLIGHT_MODE(GPS_RESCUE_MODE);
+//     levelMode_e levelMode;
+//     if (FLIGHT_MODE(ANGLE_MODE) || FLIGHT_MODE(HORIZON_MODE) || gpsRescueIsActive) {
+//         if (levelRaceMode && !gpsRescueIsActive) {
+//             levelMode = LEVEL_MODE_R;
+//         } else {
+//             levelMode = LEVEL_MODE_RP;
+//         }
+//     } else {
+//         levelMode = LEVEL_MODE_OFF;
+//     }
+//
+//     // Keep track of when we entered a self-level mode so that we can
+//     // add a guard time before crash recovery can activate.
+//     // Also reset the guard time whenever GPS Rescue is activated.
+//     if (levelMode) {
+//         if ((levelModeStartTimeUs == 0) || (gpsRescueIsActive && !gpsRescuePreviousState)) {
+//             levelModeStartTimeUs = currentTimeUs;
+//         }
+//     } else {
+//         levelModeStartTimeUs = 0;
+//     }
+//     gpsRescuePreviousState = gpsRescueIsActive;
+// #endif
 
     // Dynamic i component,
     if ((antiGravityMode == ANTI_GRAVITY_SMOOTH) && antiGravityEnabled) {
@@ -1378,24 +1378,24 @@ void FAST_CODE pidController(const pidProfile_t *pidProfile, timeUs_t currentTim
         }
         // Yaw control is GYRO based, direct sticks control is applied to rate PID
         // When Race Mode is active PITCH control is also GYRO based in level or horizon mode
-#if defined(USE_ACC)
-        switch (levelMode) {
-        case LEVEL_MODE_OFF:
-
-            break;
-        case LEVEL_MODE_R:
-            if (axis == FD_PITCH) {
-                break;
-            }
-
-            FALLTHROUGH;
-        case LEVEL_MODE_RP:
-            if (axis == FD_YAW) {
-                break;
-            }
-            currentPidSetpoint = pidLevel(axis, pidProfile, angleTrim, currentPidSetpoint);
-        }
-#endif
+// #if defined(USE_ACC)
+//         switch (levelMode) {
+//         case LEVEL_MODE_OFF:
+//
+//             break;
+//         case LEVEL_MODE_R:
+//             if (axis == FD_PITCH) {
+//                 break;
+//             }
+//
+//             FALLTHROUGH;
+//         case LEVEL_MODE_RP:
+//             if (axis == FD_YAW) {
+//                 break;
+//             }
+//             currentPidSetpoint = pidLevel(axis, pidProfile, angleTrim, currentPidSetpoint);
+//         }
+// #endif
 
 #ifdef USE_ACRO_TRAINER
         if ((axis != FD_YAW) && acroTrainerActive && !inCrashRecoveryMode && !launchControlActive) {
