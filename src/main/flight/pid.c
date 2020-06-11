@@ -1462,14 +1462,14 @@ void FAST_CODE pidController(const pidProfile_t *pidProfile, timeUs_t currentTim
         if (launchControlActive) {
             Ki = launchControlKi;
             axisDynCi = dynCi;
-        } else 
+        } else
 #endif
         {
             Ki = pidCoefficient[axis].Ki;
             axisDynCi = (axis == FD_YAW) ? dynCi : dT; // only apply windup protection to yaw
         }
 
-        pidData[axis].I = constrainf(previousIterm + (Ki * axisDynCi + agGain) * itermErrorRate, -itermLimit, itermLimit);
+        pidData[axis].I = constrainf(previousIterm + (Ki * axisDynCi + agGain) * itermErrorRate * itermErrorRate, -itermLimit, itermLimit);
 
         // -----calculate pidSetpointDelta
         float pidSetpointDelta = 0;
