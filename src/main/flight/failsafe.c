@@ -96,6 +96,7 @@ void failsafeReset(void)
     failsafeState.receivingRxDataPeriodPreset = 0;
     failsafeState.phase = FAILSAFE_IDLE;
     failsafeState.rxLinkState = FAILSAFE_RXLINK_DOWN;
+    failsafeState.rxRecovering = false;
 }
 
 void failsafeInit(void)
@@ -180,6 +181,9 @@ void failsafeOnValidDataReceived(void)
     if ((failsafeState.validRxDataReceivedAt - failsafeState.validRxDataFailedAt) > failsafeState.rxDataRecoveryPeriod) {
         failsafeState.rxLinkState = FAILSAFE_RXLINK_UP;
         unsetArmingDisabled(ARMING_DISABLED_RX_FAILSAFE);
+        failsafeState.rxRecovering = false;
+    } else {
+        failsafeState.rxRecovering = true;
     }
 }
 
@@ -190,6 +194,7 @@ void failsafeOnValidDataFailed(void)
     if ((failsafeState.validRxDataFailedAt - failsafeState.validRxDataReceivedAt) > failsafeState.rxDataFailurePeriod) {
         failsafeState.rxLinkState = FAILSAFE_RXLINK_DOWN;
     }
+    failsafeState.rxRecovering = false;
 }
 
 void failsafeUpdateState(void)
@@ -208,7 +213,7 @@ void failsafeUpdateState(void)
     }
 
     // Beep RX lost only if we are not seeing data and we have been armed earlier
-    if (!receivingRxData && (armed || ARMING_FLAG(WAS_EVER_ARMED))) {
+    if (!receivingRxData && (armed || ARMING_FLAG(WAS_EVER_ARMED)) && !failsafeSwitchIsOn && !failsafeState.rxRecovering) {
         beeperMode = BEEPER_RX_LOST;
     }
 

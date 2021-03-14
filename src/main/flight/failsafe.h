@@ -81,6 +81,7 @@ typedef struct failsafeState_s {
     int16_t events;
     bool monitoring;
     bool active;
+    bool rxRecovering;
     uint32_t rxDataFailurePeriod;
     uint32_t rxDataRecoveryPeriod;
     uint32_t validRxDataReceivedAt;
