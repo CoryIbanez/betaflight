@@ -43,6 +43,7 @@
 
 #include "fc/rc_controls.h"
 #include "fc/rc_modes.h"
+#include "fc/runtime_config.h"
 
 #include "flight/failsafe.h"
 
@@ -98,6 +99,8 @@ static bool auxiliaryProcessingRequired = false;
 static bool rxSignalReceived = false;
 static bool rxFlightChannelsValid = false;
 static bool rxIsInFailsafeMode = true;
+static uint32_t failsafeAuxDelayExpiryPeriod = 0;
+#define FAILSAFE_AUX_DELAY 5000
 static uint8_t rxChannelCount;
 
 static timeUs_t rxNextUpdateAtUs = 0;
@@ -454,6 +457,27 @@ void setLinkQualityDirect(uint16_t linkqualityValue)
 #endif
 }
 
+void updateRxIsInFailsafeMode(bool value) {
+    if (!rxIsInFailsafeMode && value) {
+        failsafeAuxDelayExpiryPeriod = millis() + FAILSAFE_AUX_DELAY;
+    } else if (rxIsInFailsafeMode && !value) {
+        failsafeAuxDelayExpiryPeriod = 0;
+    }
+    rxIsInFailsafeMode = value;
+}
+
+bool failsafeAuxDelayElapsed() {
+    if (!ARMING_FLAG(WAS_EVER_ARMED)) {
+        return true;
+    }
+
+    if (failsafeAuxDelayExpiryPeriod == 0) {
+        return false;
+    }
+
+    return !(cmp32(millis(), failsafeAuxDelayExpiryPeriod) < 0);
+}
+
 bool rxUpdateCheck(timeUs_t currentTimeUs, timeDelta_t currentDeltaTimeUs)
 {
     bool signalReceived = false;
@@ -467,7 +491,7 @@ bool rxUpdateCheck(timeUs_t currentTimeUs, timeDelta_t currentDeltaTimeUs)
     case RX_PROVIDER_PPM:
         if (isPPMDataBeingReceived()) {
             signalReceived = true;
-            rxIsInFailsafeMode = false;
+            updateRxIsInFailsafeMode(false);
             needRxSignalBefore = currentTimeUs + needRxSignalMaxDelayUs;
             resetPPMDataReceivedState();
         }
@@ -476,7 +500,7 @@ bool rxUpdateCheck(timeUs_t currentTimeUs, timeDelta_t currentDeltaTimeUs)
     case RX_PROVIDER_PARALLEL_PWM:
         if (isPWMDataBeingReceived()) {
             signalReceived = true;
-            rxIsInFailsafeMode = false;
+            updateRxIsInFailsafeMode(false);
             needRxSignalBefore = currentTimeUs + needRxSignalMaxDelayUs;
             useDataDrivenProcessing = false;
         }
@@ -489,7 +513,7 @@ bool rxUpdateCheck(timeUs_t currentTimeUs, timeDelta_t currentDeltaTimeUs)
         {
             const uint8_t frameStatus = rxRuntimeState.rcFrameStatusFn(&rxRuntimeState);
             if (frameStatus & RX_FRAME_COMPLETE) {
-                rxIsInFailsafeMode = (frameStatus & RX_FRAME_FAILSAFE) != 0;
+                updateRxIsInFailsafeMode((frameStatus & RX_FRAME_FAILSAFE) != 0);
                 bool rxFrameDropped = (frameStatus & RX_FRAME_DROPPED) != 0;
                 signalReceived = !(rxIsInFailsafeMode || rxFrameDropped);
                 if (signalReceived) {
@@ -638,10 +662,14 @@ static void detectAndApplySignalLossBehaviour(void)
             if (cmp32(currentTimeMs, rcInvalidPulsPeriod[channel]) < 0) {
                 continue;           // skip to next channel to hold channel value MAX_INVALID_PULS_TIME
             } else {
-                sample = getRxfailValue(channel);   // after that apply rxfail value
                 if (channel < NON_AUX_CHANNEL_COUNT) {
                     rxFlightChannelsValid = false;
+                } else {
+                    if (!failsafeAuxDelayElapsed()) {
+                        continue;
+                    }
                 }
+                sample = getRxfailValue(channel);   // after that apply rxfail value
             }
         }
 #if defined(USE_PWM) || defined(USE_PPM)
@@ -658,9 +686,12 @@ static void detectAndApplySignalLossBehaviour(void)
     if (rxFlightChannelsValid && !IS_RC_MODE_ACTIVE(BOXFAILSAFE)) {
         failsafeOnValidDataReceived();
     } else {
-        rxIsInFailsafeMode = true;
+        updateRxIsInFailsafeMode(true);
         failsafeOnValidDataFailed();
         for (int channel = 0; channel < rxChannelCount; channel++) {
+            if (channel >= NON_AUX_CHANNEL_COUNT && !failsafeAuxDelayElapsed()) {
+                continue;
+            }
             rcData[channel] = getRxfailValue(channel);
         }
     }
