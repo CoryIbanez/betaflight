@@ -446,7 +446,7 @@ static void beeperProcessCommand(timeUs_t currentTimeUs)
         beeperSilence();
     } else {
         // Otherwise advance the sequence and calculate next toggle time
-        beeperNextToggleTime = currentTimeUs + 1000 * 10 * currentBeeperEntry->sequence[beeperPos];
+        beeperNextToggleTime = currentTimeUs + 1000 * 1 * currentBeeperEntry->sequence[beeperPos];
         beeperPos++;
     }
 }
