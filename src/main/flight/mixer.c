@@ -67,6 +67,9 @@
 #define DYN_LPF_THROTTLE_STEPS           100
 #define DYN_LPF_THROTTLE_UPDATE_DELAY_US 5000 // minimum of 5ms between updates
 
+#define RPM_LIMITER_LEARNING_RATE_DOWN   3.0f  // Rate for reducing throttle scale when RPM too high
+#define RPM_LIMITER_LEARNING_RATE_UP     2.0f  // Rate for increasing throttle scale when RPM too low
+
 static FAST_DATA_ZERO_INIT float motorMixRange;
 
 float FAST_DATA_ZERO_INIT motor[MAX_SUPPORTED_MOTORS];
@@ -352,7 +355,15 @@ static void applyRpmLimiter(mixerRuntime_t *mixer)
     static float prevError = 0.0f;
     const float unsmoothedAverageRpm = getDshotRpmAverage();
     const float averageRpm = pt1FilterApply(&mixer->rpmLimiterAverageRpmFilter, unsmoothedAverageRpm);
-    const float error = averageRpm - mixer->rpmLimiterRpmLimit;
+    
+    // Calculate throttle percentage (0.0 to 1.0)
+    const float throttlePercent = scaleRangef(rcCommand[THROTTLE], 1000.0f, 2000.0f, 0.0f, 1.0f);
+    
+    // Calculate dynamic RPM limit based on throttle percentage
+    const float dynamicRpmLimit = mixer->rpmLimiterRpmLimit * throttlePercent;
+    
+    // Calculate error based on averageRpm vs dynamicRpmLimit
+    const float error = averageRpm - dynamicRpmLimit;
 
     // PID
     const float p = error * mixer->rpmLimiterPGain;
@@ -361,11 +372,15 @@ static void applyRpmLimiter(mixerRuntime_t *mixer)
     mixer->rpmLimiterI = MAX(0.0f, mixer->rpmLimiterI);
     float pidOutput = p + mixer->rpmLimiterI + d;
 
-    // Throttle limit learning
-    if (error > 0.0f && rcCommand[THROTTLE] < rxConfig()->maxcheck) {
-        mixer->rpmLimiterThrottleScale *= 1.0f - 4.8f * pidGetDT();
-    } else if (pidOutput < -400.0f * pidGetDT() && lrintf(rcCommand[THROTTLE]) >= rxConfig()->maxcheck - STICK_HIGH_DEADBAND && !areMotorsSaturated()) { // Throttle accel corresponds with motor accel
-        mixer->rpmLimiterThrottleScale *= 1.0f + 3.2f * pidGetDT();
+    // Throttle limit learning - always scale based on error with separate rates
+    const float learningRateDown = RPM_LIMITER_LEARNING_RATE_DOWN * pidGetDT();
+    const float learningRateUp = RPM_LIMITER_LEARNING_RATE_UP * pidGetDT();
+    if (error > 0.0f) {
+        // RPM too high - reduce throttle scale
+        mixer->rpmLimiterThrottleScale *= 1.0f - learningRateDown;
+    } else if (error < 0.0f && !areMotorsSaturated()) {
+        // RPM too low - increase throttle scale (but only if not saturated)
+        mixer->rpmLimiterThrottleScale *= 1.0f + learningRateUp;
     }
     mixer->rpmLimiterThrottleScale = constrainf(mixer->rpmLimiterThrottleScale, 0.01f, 1.0f);
 
