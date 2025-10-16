@@ -357,7 +357,7 @@ static void applyRpmLimiter(mixerRuntime_t *mixer)
     const float averageRpm = pt1FilterApply(&mixer->rpmLimiterAverageRpmFilter, unsmoothedAverageRpm);
     
     // Calculate throttle percentage (0.0 to 1.0)
-    const float throttlePercent = scaleRangef(rcCommand[THROTTLE], 1000.0f, 2000.0f, 0.0f, 1.0f);
+    const float throttlePercent = scaleRangef(rcCommand[THROTTLE], 1000.0f, 2000.0f, 0.1f, 1.0f);
     
     // Calculate dynamic RPM limit based on throttle percentage
     const float dynamicRpmLimit = mixer->rpmLimiterRpmLimit * throttlePercent;

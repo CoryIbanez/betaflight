@@ -60,7 +60,7 @@ void pgResetFn_mixerConfig(mixerConfig_t *mixerConfig)
     mixerConfig->rpm_limit = false;
     mixerConfig->rpm_limit_p = 25;
     mixerConfig->rpm_limit_i = 10;
-    mixerConfig->rpm_limit_d = 8;
+    mixerConfig->rpm_limit_d = 12;
     mixerConfig->rpm_limit_value = 18000;
 #endif
 }
