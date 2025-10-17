@@ -352,7 +352,7 @@ static void applyFlipOverAfterCrashModeToMotors(void)
 #define STICK_HIGH_DEADBAND 5    // deadband to make sure throttle cap can raise, even with maxcheck set around 2000
 static void applyRpmLimiter(mixerRuntime_t *mixer)
 {
-    static float prevError = 0.0f;
+    static float prevRawPidOutput = 0.0f;
     const float unsmoothedAverageRpm = getDshotRpmAverage();
     const float averageRpm = pt1FilterApply(&mixer->rpmLimiterAverageRpmFilter, unsmoothedAverageRpm);
     
@@ -370,40 +370,26 @@ static void applyRpmLimiter(mixerRuntime_t *mixer)
 
     // PID
     const float p = error * mixer->rpmLimiterPGain;
-    const float d = (error - prevError) * mixer->rpmLimiterDGain; // rpmLimiterDGain already adjusted for looprate (see mixer_init.c)
     mixer->rpmLimiterI += error * mixer->rpmLimiterIGain;         // rpmLimiterIGain already adjusted for looprate (see mixer_init.c)
-    // Allow I term to go negative for throttle reduction when RPM over limit
-    // mixer->rpmLimiterI = MAX(0.0f, mixer->rpmLimiterI);
-    float pidOutput = p + mixer->rpmLimiterI + d;
-
-    // Throttle limit learning - DISABLED (using PID-only approach)
-    // const float learningRateDown = RPM_LIMITER_LEARNING_RATE_DOWN * pidGetDT();
-    // const float learningRateUp = RPM_LIMITER_LEARNING_RATE_UP * pidGetDT();
-    // if (error > 0.0f) {
-    //     // RPM too high - reduce throttle scale
-    //     mixer->rpmLimiterThrottleScale *= 1.0f - learningRateDown;
-    // } 
-    // else if (error < 0.0f && !areMotorsSaturated()) {
-    //     // RPM too low - increase throttle scale (but only if not saturated)
-    //     mixer->rpmLimiterThrottleScale *= 1.0f + learningRateUp;
-    // }
-    // mixer->rpmLimiterThrottleScale = constrainf(mixer->rpmLimiterThrottleScale, 0.01f, 1.0f);
-
-    // Throttle scale offset calculation - DISABLED (using PID-only approach)
-    // float rpmLimiterThrottleScaleOffset = pt1FilterApply(&mixer->rpmLimiterThrottleScaleOffsetFilter, constrainf(mixer->rpmLimiterRpmLimit / motorEstimateMaxRpm(), 0.0f, 1.0f) - mixer->rpmLimiterInitialThrottleScale);
+    // Clamp I term to prevent windup (limit to ±500 for 2x P term max, scaled for 1000x gains)
+    mixer->rpmLimiterI = constrainf(mixer->rpmLimiterI, -500.0f, 500.0f);
     
-    // Apply RPM limiter scaling but never exceed raw pilot input - DISABLED
-    // throttle *= constrainf(mixer->rpmLimiterThrottleScale + rpmLimiterThrottleScaleOffset, 0.0f, 1.0f);
+    // D term based on rate of change of raw PID output (before scaling) for smooth damping
+    const float rawPidOutput = p + mixer->rpmLimiterI;
+    const float d = -(rawPidOutput - prevRawPidOutput) * mixer->rpmLimiterDGain * 0.1f; // Negative to oppose changes
+    prevRawPidOutput = rawPidOutput;
     
+    // Scale down by 10,000,000x to compensate for increased gains
+    float pidOutput = (rawPidOutput + d) / 10000000.0f;
+
     // PID-only RPM limiting output
-    // Apply PID output as throttle reduction (negative pidOutput reduces throttle)
-    // Clamp pidOutput to prevent extreme scaling
-    pidOutput = constrainf(pidOutput, -0.9f, 0.0f);
+    // Apply PID output as throttle scaling (can both increase and decrease throttle)
+    // Clamp pidOutput to reasonable range
+    pidOutput = constrainf(pidOutput, -0.2f, 0.2f);
     throttle = constrainf(throttle * (1.0f + pidOutput), 0.0f, 1.0f);
     
     // Ensure throttle never exceeds raw pilot input (throttlePercent is the raw RC input)
     throttle = MIN(throttle, throttlePercent);
-    prevError = error;
 
     DEBUG_SET(DEBUG_RPM_LIMIT, 0, lrintf(averageRpm));
     DEBUG_SET(DEBUG_RPM_LIMIT, 1, lrintf(dynamicRpmLimit));
