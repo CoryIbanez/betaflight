@@ -364,6 +364,7 @@ void mixerInitProfile(void)
     mixerRuntime.rpmLimiterI = 0.0;
     pt1FilterInit(&mixerRuntime.rpmLimiterAverageRpmFilter, pt1FilterGain(6.0f, pidGetDT()));
     pt1FilterInit(&mixerRuntime.rpmLimiterThrottleScaleOffsetFilter, pt1FilterGain(2.0f, pidGetDT()));
+    pt1FilterInit(&mixerRuntime.rpmLimiterDynamicRpmLimitFilter, pt1FilterGain(2.0f, pidGetDT())); // 2Hz cutoff for smooth response
     mixerResetRpmLimiter();
 #endif
 

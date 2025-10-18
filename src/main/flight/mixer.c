@@ -359,8 +359,11 @@ static void applyRpmLimiter(mixerRuntime_t *mixer)
     // Calculate throttle percentage (0.0 to 1.0)
     const float throttlePercent = scaleRangef(rcCommand[THROTTLE], 1000.0f, 2000.0f, 0.05f, 1.0f);
     
-    // Calculate dynamic RPM limit based on throttle percentage
-    const float dynamicRpmLimit = mixer->rpmLimiterRpmLimit * throttlePercent;
+    // Calculate raw dynamic RPM limit based on throttle percentage
+    const float rawDynamicRpmLimit = mixer->rpmLimiterRpmLimit * throttlePercent;
+    
+    // Filter the dynamic RPM limit to prevent sharp changes during rapid throttle inputs
+    const float dynamicRpmLimit = pt1FilterApply(&mixer->rpmLimiterDynamicRpmLimitFilter, rawDynamicRpmLimit);
     
     // Calculate error as percentage over limit, scaled to -1000 to 1000 range
     // Inverted: RPM over limit should produce negative error for throttle reduction
@@ -389,7 +392,7 @@ static void applyRpmLimiter(mixerRuntime_t *mixer)
     throttle = constrainf(throttle * (1.0f + pidOutput), 0.0f, 1.0f);
     
     // Ensure throttle never exceeds raw pilot input (throttlePercent is the raw RC input)
-    throttle = MIN(throttle, throttlePercent);
+    //throttle = MIN(throttle, throttlePercent);
 
     DEBUG_SET(DEBUG_RPM_LIMIT, 0, lrintf(averageRpm));
     DEBUG_SET(DEBUG_RPM_LIMIT, 1, lrintf(dynamicRpmLimit));
