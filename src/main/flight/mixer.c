@@ -69,6 +69,7 @@
 
 #define RPM_LIMITER_LEARNING_RATE_DOWN   3.0f  // Rate for reducing throttle scale when RPM too high
 #define RPM_LIMITER_LEARNING_RATE_UP     2.0f  // Rate for increasing throttle scale when RPM too low
+#define RPM_LIMITER_PID_OUTPUT_SCALE     1000000.0f
 
 static FAST_DATA_ZERO_INIT float motorMixRange;
 
@@ -352,47 +353,70 @@ static void applyFlipOverAfterCrashModeToMotors(void)
 #define STICK_HIGH_DEADBAND 5    // deadband to make sure throttle cap can raise, even with maxcheck set around 2000
 static void applyRpmLimiter(mixerRuntime_t *mixer)
 {
-    static float prevRawPidOutput = 0.0f;
+    static float prevThrottleScale = 1.0f;
     const float unsmoothedAverageRpm = getDshotRpmAverage();
     const float averageRpm = pt1FilterApply(&mixer->rpmLimiterAverageRpmFilter, unsmoothedAverageRpm);
     
     // Calculate throttle percentage (0.0 to 1.0)
-    const float throttlePercent = scaleRangef(rcCommand[THROTTLE], 1000.0f, 2000.0f, 0.05f, 1.0f);
-    
-    // Calculate raw dynamic RPM limit based on throttle percentage
-    const float rawDynamicRpmLimit = mixer->rpmLimiterRpmLimit * throttlePercent;
-    
-    // Filter the dynamic RPM limit to prevent sharp changes during rapid throttle inputs
-    const float dynamicRpmLimit = pt1FilterApply(&mixer->rpmLimiterDynamicRpmLimitFilter, rawDynamicRpmLimit);
-    
-    // Calculate error as percentage over limit, scaled to -1000 to 1000 range
-    // Inverted: RPM over limit should produce negative error for throttle reduction
-    // Scale factor: 1000x to get reasonable PID output values
-    // Prevent division by zero with proper safety check
-    const float error = (dynamicRpmLimit > 100.0f) ? (dynamicRpmLimit - averageRpm) / dynamicRpmLimit * 1000.0f : 0.0f;
+    const float throttlePercent = scaleRangef(rcCommand[THROTTLE], 1000.0f, 2000.0f, 0.0f, 1.0f);
 
-    // PID
-    const float p = error * mixer->rpmLimiterPGain;
-    mixer->rpmLimiterI += error * mixer->rpmLimiterIGain;         // rpmLimiterIGain already adjusted for looprate (see mixer_init.c)
-    // Clamp I term to prevent windup (limit to ±500 for 2x P term max, scaled for 1000x gains)
-    mixer->rpmLimiterI = constrainf(mixer->rpmLimiterI, -500.0f, 500.0f);
-    
-    // D term based on rate of change of raw PID output (before scaling) for smooth damping
-    const float rawPidOutput = p + mixer->rpmLimiterI;
-    const float d = -(rawPidOutput - prevRawPidOutput) * mixer->rpmLimiterDGain * 0.1f; // Negative to oppose changes
-    prevRawPidOutput = rawPidOutput;
-    
-    // Scale down by 10,000,000x to compensate for increased gains
-    float pidOutput = (rawPidOutput + d) / 10000000.0f;
+    float rawDynamicRpmLimit = 0.0f;
+    float dynamicRpmLimit = 0.0f;
+    float error = 0.0f;
+    float p = 0.0f;
+    float rawPidOutput = 0.0f;
+    float d = 0.0f;
+    float pidOutput = 0.0f;
 
-    // PID-only RPM limiting output
-    // Apply PID output as throttle scaling (can both increase and decrease throttle)
-    // Clamp pidOutput to reasonable range
-    pidOutput = constrainf(pidOutput, -0.2f, 0.2f);
-    throttle = constrainf(throttle * (1.0f + pidOutput), 0.0f, 1.0f);
-    
-    // Ensure throttle never exceeds raw pilot input (throttlePercent is the raw RC input)
-    //throttle = MIN(throttle, throttlePercent);
+    if (throttlePercent > 0.05f) {
+        // Calculate raw dynamic RPM limit based on throttle percentage
+        rawDynamicRpmLimit = mixer->rpmLimiterRpmLimit * throttlePercent;
+
+        // Filter the dynamic RPM limit to prevent sharp changes during rapid throttle inputs
+        dynamicRpmLimit = pt1FilterApply(&mixer->rpmLimiterDynamicRpmLimitFilter, rawDynamicRpmLimit);
+
+        // Prevent division by zero with proper safety check
+        error = (dynamicRpmLimit > 100.0f) ? (dynamicRpmLimit - averageRpm) / dynamicRpmLimit * 1000.0f : 0.0f;
+
+        // PID
+        p = error * mixer->rpmLimiterPGain;
+        mixer->rpmLimiterI += error * mixer->rpmLimiterIGain;
+        // Clamp I term to prevent windup
+        mixer->rpmLimiterI = constrainf(mixer->rpmLimiterI, -5000.0f, 5000.0f);
+
+        d = -(mixer->rpmLimiterThrottleScale - prevThrottleScale) * mixer->rpmLimiterDGain; // Negative to oppose changes
+        prevThrottleScale = mixer->rpmLimiterThrottleScale;
+        
+        rawPidOutput = p + mixer->rpmLimiterI;
+
+        // scale down the pidOutput
+        pidOutput = (rawPidOutput + d) / RPM_LIMITER_PID_OUTPUT_SCALE;
+
+        // Apply throttle-based scaling to reduce PID impact at low throttle
+        if (throttlePercent < 0.25f) {
+            pidOutput *= ((throttlePercent - 0.05f) * 5.0f);
+        }
+
+        // Clamp pidOutput to reasonable range
+        pidOutput = constrainf(pidOutput, -0.2f, 0.2f);
+
+        // Update persistent throttle scale based on PID output
+        mixer->rpmLimiterThrottleScale += pidOutput;
+
+        // Clamp throttle scale to reasonable range (0.1 to 1.0)
+        mixer->rpmLimiterThrottleScale = constrainf(mixer->rpmLimiterThrottleScale, 0.3f, 1.0f);
+
+        // Filter the throttle scale to prevent rapid changes
+        mixer->rpmLimiterThrottleScale = pt1FilterApply(&mixer->rpmLimiterThrottleScaleFilter, mixer->rpmLimiterThrottleScale);
+
+        // Apply filtered throttle scale to the global throttle
+        throttle = constrainf(throttle * mixer->rpmLimiterThrottleScale, 0.0f, 1.0f);
+    }
+    else
+    {
+        // Apply previously calculated throttle scale to the global throttle
+        throttle = constrainf(throttle * mixer->rpmLimiterThrottleScale, 0.0f, 1.0f);
+    }
 
     DEBUG_SET(DEBUG_RPM_LIMIT, 0, lrintf(averageRpm));
     DEBUG_SET(DEBUG_RPM_LIMIT, 1, lrintf(dynamicRpmLimit));
@@ -401,7 +425,7 @@ static void applyRpmLimiter(mixerRuntime_t *mixer)
     DEBUG_SET(DEBUG_RPM_LIMIT, 4, lrintf(p * 100.0f));
     DEBUG_SET(DEBUG_RPM_LIMIT, 5, lrintf(mixer->rpmLimiterI * 100.0f));
     DEBUG_SET(DEBUG_RPM_LIMIT, 6, lrintf(d * 100.0f));
-    DEBUG_SET(DEBUG_RPM_LIMIT, 7, lrintf(pidOutput * 100.0f));
+    DEBUG_SET(DEBUG_RPM_LIMIT, 7, lrintf(mixer->rpmLimiterThrottleScale * 100.0f)); // Throttle scale percentage
 }
 #endif // USE_RPM_LIMIT
 
